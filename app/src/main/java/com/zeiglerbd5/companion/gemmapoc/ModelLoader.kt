@@ -55,14 +55,9 @@ class ModelLoader(application: Application) : AndroidViewModel(application) {
             val file = modelFile()
             if (!file.exists()) {
                 _state.value = LoadState.Failed(
-                    """
-                    Model not found at:
-                    ${file.absolutePath}
-
-                    Install with:
-                      adb push gemma-4-E2B-it.litertlm \
-                        ${file.parent}/
-                    """.trimIndent()
+                    "Model file not found. Install with:\n" +
+                        "  adb push gemma-4-E2B-it.litertlm \\\n" +
+                        "    ${file.parent}/"
                 )
                 return@launch
             }

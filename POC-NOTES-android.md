@@ -62,34 +62,63 @@ Source: `https://github.com/google-ai-edge/LiteRT-LM`.
 
 ---
 
-## OPEN — M2/M4/M5: Emulator-baseline measurements
+## 2026-05-26 — First successful end-to-end smoke test on emulator
 
-**Reference:** iOS sibling `ARCHITECTURE.md` §13 (M-series metrics).
+**Reference:** Briefing § "First task: end-to-end inference smoke test."
 
-**To measure on the Android Studio emulator (Apple Silicon Mac,
-arm64 AVD, Pixel-class profile) once the smoke test runs end-to-end:**
+**Setup:** Pixel 10 Pro XL AVD, Android API 37, arm64 (Apple Silicon
+host). LiteRT-LM 0.12.0, gemma-4-E2B-it.litertlm (2.41 GB on disk).
+Sideloaded via `adb push` from ~/Downloads. Prompt: "What is the
+capital of France?"
 
-- **M2 — Cold load time:** wall-clock from `Engine(config)` →
-  `state == Ready`. Briefing says we should expect "slow; that's
-  expected" on the emulator.
-- **M4 — Decode throughput** (tok/s) on `SMOKE_TEST_PROMPT`. Expect
-  to be much slower than the iPhone 17 Pro Max's ~60 tok/s figure
-  because the emulator's GPU passthrough doesn't deliver native
-  perf.
-- **M5 — Resident memory after load:** the question. iOS sees
-  ~3.5 GB resident under MLX-Swift, ~2.6 GB resident under
-  LiteRT-LM (per the iOS sibling's `ModelLoader.swift` comment).
-  Briefing's hypothesis is **~1.3 GB on Android via LiteRT-LM's
-  PLE + MatFormer** — confirming or refuting that is the load-
-  bearing reason the Android port exists at all. Measure with
-  Android Studio's Profiler → Memory view after the first
-  `Run prompt` completes.
+**Result:** Engine.initialize() succeeded, Conversation.sendMessage
+returned "The capital of France is \*\*Paris\*\*." — markdown
+formatting from Gemma's instruction-tuning intact.
 
-Hardware-class measurements (real Pixel) come once the device
-arrives.
+**M2 — Cold load time:** ~9.0 seconds wall clock from Retry tap to
+`state == Ready`. Emulator's GPU passthrough is virtualized so device
+numbers should be faster.
 
-**Status:** open, blocking the M5 architecture decision in
-iOS `ARCHITECTURE.md` §14 row 2.
+**M5 — Resident memory (the load-bearing question):**
+
+| Stage | VmRSS | VmHWM |
+|---|---|---|
+| Post-load, pre-inference | **712 MB** | 712 MB |
+| Post-first-inference | **1.41 GB** | 1.41 GB |
+
+Even the post-inference peak is **dramatically under** iOS's 3.5 GB
+MLX figure and iOS's 2.6 GB LiteRT-LM figure (the comment in
+`ModelLoader.swift` claims 2.6 GB resident on iOS via LiteRT-LM).
+The pre-inference 712 MB shows the PLE selective loading at work:
+the model file is 2.41 GB on disk but only ~30% is faulted in at
+startup, expanding as the forward pass touches additional layers.
+
+This is the answer the Android port was built to find. Briefing's
+hypothesis was "~1.3 GB resident on Android via LiteRT-LM's PLE +
+MatFormer" — we landed at 1.4 GB peak on emulator, within margin
+of that target. Real-device numbers will land when the Pixel
+arrives; emulator is directionally correct.
+
+**M4 — Decode throughput:** not measured this run. The smoke-test
+PromptRunner doesn't expose token-by-token timing — that lands when
+we port the streaming Conversation shape from iOS.
+
+**Status:** resolved for emulator. Hardware re-validation deferred
+until the physical Pixel arrives.
+
+---
+
+## OPEN — M2/M4/M5: Hardware re-validation
+
+**Reference:** iOS sibling `ARCHITECTURE.md` §13 (M-series metrics);
+emulator-baseline numbers above.
+
+**Status:** open, blocked on physical Pixel device. Emulator gave
+the directional answer; hardware will calibrate the absolute numbers
+that feed iOS `ARCHITECTURE.md` §14 row 2's "minimum supported
+device" decision. M4 (decode tok/s) is also gated on Android porting
+the streaming Conversation shape — the smoke-test PromptRunner is
+one-shot only and doesn't surface per-token timing.
 
 ---
 

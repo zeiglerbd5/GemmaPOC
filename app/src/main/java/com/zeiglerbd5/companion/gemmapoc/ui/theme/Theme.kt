@@ -74,7 +74,12 @@ private fun systemColorScheme(
 private fun AppTheme.toColorScheme(systemDark: Boolean): androidx.compose.material3.ColorScheme {
     val dark = isDark ?: systemDark
     val base = if (dark) darkColorScheme() else lightColorScheme()
-    val onSurface = bubbleText ?: inputText ?: base.onSurface
+    // Prefer inputText over bubbleText for the onSurface family: Material 3
+    // has one onSurface that pairs with every surface*-container variant,
+    // and our Cards (the dominant text-bearing surface today) sit on
+    // inputBackground, not bubble colors. For Sky this means deep-navy
+    // text on white cards and on the sky-blue background — both legible.
+    val onSurface = inputText ?: bubbleText ?: base.onSurface
     return base.copy(
         primary = accent ?: base.primary,
         onPrimary = if (dark) Color.Black else Color.White,
@@ -84,8 +89,14 @@ private fun AppTheme.toColorScheme(systemDark: Boolean): androidx.compose.materi
         onSurface = onSurface,
         surfaceVariant = modelBubble,
         onSurfaceVariant = onSurface,
+        // Card defaults to surfaceContainerLow; cover the whole family so
+        // every container surface picks up the theme instead of falling
+        // through to lightColorScheme()'s pale pink defaults.
+        surfaceContainerLowest = inputBackground,
+        surfaceContainerLow = inputBackground,
         surfaceContainer = inputBackground,
         surfaceContainerHigh = inputBackground,
+        surfaceContainerHighest = inputBackground,
         outline = inputBorder,
     )
 }
