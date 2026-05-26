@@ -123,6 +123,104 @@ audit (Android equivalent of iOS M1).
 
 ---
 
+## 2026-05-26 — Theme system + rebrand ported from iOS
+
+**Reference:** iOS commits `50bcf4a9` (rebrand + themes + auto-load +
+ephemeral hints) and `6fc7cf3b` (Sky theme + 'I don't know').
+
+**Observation:** iOS shipped a 6-theme `enum Theme` (System, Terminal,
+Tactical, Parchment, Warm Cream, Sky) backed by `@AppStorage("theme")`,
+with theme picker in a toolbar submenu and themed surfaces across chat
+background, bubbles (user/model/tool), input field, send button tint,
+and a preferred light/dark color scheme. Also rebranded "GemmaPOC" →
+"OnBoard AI" (display name + nav title only — bundle ID kept) and
+auto-loads the model on first view appearance via `.task`.
+
+**Implication:**
+- Added `AppTheme.kt` (`enum class AppTheme`) mirroring the iOS enum
+  one-for-one (same 6 cases, same display names, same hex values).
+- Updated `GemmaPOCTheme` composable to accept an `AppTheme` and bridge
+  it onto Material 3's `ColorScheme`: theme.accent → primary,
+  theme.background → background/surface, theme.bubbleText/inputText →
+  onBackground/onSurface, theme.modelBubble → surfaceVariant,
+  theme.inputBackground → surfaceContainer, theme.inputBorder → outline.
+  System falls through to the existing dynamic-color-on-API-31+ logic.
+- `ThemePreferences.kt` wraps `SharedPreferences("ui_preferences", ...)`
+  for persistence. (DataStore would be more idiomatic, but for one
+  string preference it's not worth the dep + Flow plumbing.)
+- App display name updated in `strings.xml`. Compose `TopAppBar` title
+  is `"OnBoard AI"`. Bundle ID / package name unchanged, matching the
+  iOS decision to avoid project regen risk.
+- `LaunchedEffect(Unit) { if (state is Idle) loader.load() }` mirrors
+  the iOS `.task` auto-load. The "Load model" button stays visible as
+  a retry path from the Failed state.
+- Most iOS theme properties (`userBubble`, `modelBubble`, `toolBubble`,
+  `bubbleText`, `inputBackground`, `inputText`, `inputBorder`) apply
+  to surfaces that don't exist on Android yet (no chat view, no input
+  field). They're defined on the enum anyway — ready for when chat
+  lands. `background` and `accent` (mapped to surface and primary)
+  drive the visible UI today.
+
+**Status:** resolved.
+
+---
+
+## OPEN — Port 'I don't know' RAG instruction once search lands
+
+**Reference:** iOS commit `6fc7cf3b` (second half).
+
+**Observation:** iOS added a clause to `formatSearchContext` in
+`PromptParsing.swift` that licenses "I couldn't find that" as a valid
+answer when web-search results don't address the question — anti-
+hallucination protection. The Android port has no search path yet, so
+the instruction has nothing to attach to.
+
+**Implication:** when the agentic web-search loop ports from iOS, the
+RAG-context formatter must include the same "say the search didn't
+surface the answer; do NOT fill from general knowledge" wording.
+
+**Status:** deferred — gated on agentic search landing on Android.
+
+---
+
+## OPEN — Port ephemeral-hints framework once system-prompt path lands
+
+**Reference:** iOS commit `50bcf4a9` (EphemeralHints section).
+
+**Observation:** iOS added `PromptParsing.ephemeralHints(for:)` —
+per-turn context snippets that get folded into the user body without
+inflating the persistent system prompt. First user is privacy-question
+detection (prepends a deployment hint when the user asks "is this
+private", "does my data leave my phone", etc.). Threaded through
+`PromptRunner.respondStream` + `buildUserBody`.
+
+**Implication:** when Android's `PromptRunner` grows a system-prompt /
+multi-turn shape, port the ephemeralHints framework alongside it. The
+hint table can be near-identical Kotlin — regex match + prepend.
+
+**Status:** deferred — gated on multi-turn chat + system prompt
+landing on Android.
+
+---
+
+## OPEN — Port self-identity prompt rules
+
+**Reference:** iOS commit `50bcf4a9` (rebrand section).
+
+**Observation:** iOS system prompt now instructs the model to
+introduce itself as "OnBoard AI" and never name Gemma, Google,
+LiteRT, MLX, or any underlying technology. Android has no system
+prompt yet.
+
+**Implication:** when the Android `PromptRunner` grows a system prompt
+(currently the smoke-test PromptRunner is stateless and prompt-less),
+copy the iOS persona text verbatim including the no-name-the-tech
+clause.
+
+**Status:** deferred — gated on system-prompt landing on Android.
+
+---
+
 ## Template
 
 ```
