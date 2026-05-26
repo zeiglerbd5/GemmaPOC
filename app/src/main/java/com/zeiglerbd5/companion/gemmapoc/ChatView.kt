@@ -1,0 +1,167 @@
+package com.zeiglerbd5.companion.gemmapoc
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.google.ai.edge.litertlm.Engine
+import com.zeiglerbd5.companion.gemmapoc.ui.theme.AppTheme
+
+/**
+ * Multi-turn chat surface. Renders a scrolling list of [MessageBubble]
+ * over a per-theme background, plus a sticky input row at the bottom.
+ * Mirrors the iOS sibling's `ChatView.swift` shape — same bubble color
+ * mapping (user/model bubble + bubbleText), same input-field theming
+ * (inputBackground + inputBorder + inputText), same auto-scroll on new
+ * messages.
+ */
+@Composable
+fun ChatView(
+    engine: Engine,
+    appTheme: AppTheme,
+    chatStore: ChatStore = viewModel(),
+) {
+    val messages by chatStore.messages.collectAsState()
+    val status by chatStore.status.collectAsState()
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.lastIndex)
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            state = listState,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                horizontal = 12.dp,
+                vertical = 12.dp,
+            ),
+        ) {
+            items(messages, key = { it.id }) { msg ->
+                MessageBubble(msg, appTheme)
+            }
+        }
+        InputRow(
+            appTheme = appTheme,
+            sending = status is ChatStore.Status.Sending,
+            onSend = { text -> chatStore.send(engine, text) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .navigationBarsPadding(),
+        )
+    }
+}
+
+@Composable
+private fun MessageBubble(msg: ChatMessage, appTheme: AppTheme) {
+    val isUser = msg.role == ChatRole.User
+    val bubbleColor = if (isUser) appTheme.userBubble else appTheme.modelBubble
+    val textColor = appTheme.bubbleText ?: LocalContentColor.current
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+    ) {
+        Box(
+            modifier = Modifier
+                .widthIn(max = 320.dp)
+                .background(bubbleColor, RoundedCornerShape(14.dp))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+        ) {
+            Text(
+                text = msg.text.ifEmpty { "…" },
+                color = textColor,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun InputRow(
+    appTheme: AppTheme,
+    sending: Boolean,
+    onSend: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var draft by remember { mutableStateOf("") }
+
+    Row(
+        modifier = modifier
+            .background(appTheme.inputBackground)
+            .border(1.dp, appTheme.inputBorder)
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it },
+            modifier = Modifier.weight(1f),
+            enabled = !sending,
+            placeholder = { Text("Ask anything…") },
+            singleLine = false,
+            maxLines = 6,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = {
+                if (!sending && draft.isNotBlank()) {
+                    onSend(draft)
+                    draft = ""
+                }
+            }),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = appTheme.inputBackground,
+                unfocusedContainerColor = appTheme.inputBackground,
+                disabledContainerColor = appTheme.inputBackground,
+            ),
+        )
+        Button(
+            onClick = {
+                onSend(draft)
+                draft = ""
+            },
+            enabled = !sending && draft.isNotBlank(),
+        ) {
+            Text(if (sending) "…" else "Send")
+        }
+    }
+}
