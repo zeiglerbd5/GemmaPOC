@@ -13,6 +13,12 @@ import com.zeiglerbd5.companion.gemmapoc.search.SearchResult
  */
 object PromptParsing {
 
+    /** Answer-length styles, folded into each user turn. From iOS PromptParsing. */
+    const val CONCISE_STYLE = "Keep replies short and direct — usually one to three sentences."
+    const val DETAILED_STYLE = "Give thorough, well-organized answers. Use a paragraph or " +
+        "two when the topic warrants it. Cover relevant background and structure longer " +
+        "replies with simple paragraph breaks."
+
     /**
      * If [text]'s first line is `SEARCH: <query>`, return the query, else
      * null. Case-insensitive on the prefix; query trimmed.

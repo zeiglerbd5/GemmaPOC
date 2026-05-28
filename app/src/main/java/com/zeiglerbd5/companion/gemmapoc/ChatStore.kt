@@ -50,13 +50,18 @@ class ChatStore : ViewModel() {
     private val router = SearchRouter()
     private var conversation: Conversation? = null
 
-    fun send(engine: Engine, text: String) {
+    fun send(engine: Engine, text: String, detailed: Boolean) {
         if (_status.value is Status.Sending) return
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
 
+        // Display the raw text in the bubble, but fold the answer-length
+        // style into what the model actually receives (the "In Depth"
+        // toggle). The system prompt can't carry this — it's fixed at
+        // conversation creation and the toggle changes mid-chat.
         _messages.update { it + ChatMessage(ChatRole.User, trimmed) }
         _status.value = Status.Sending
+        val modelInput = "$trimmed\n\n(${styleFor(detailed)})"
 
         viewModelScope.launch {
             val pending = ChatMessage(ChatRole.Model, "")
@@ -69,7 +74,7 @@ class ChatStore : ViewModel() {
                 // NOT show. Buffer silently until the head can no longer be a
                 // search directive, then stream live into the bubble.
                 var streaming = false
-                val first = streamReply(conv, trimmed) { soFar ->
+                val first = streamReply(conv, modelInput) { soFar ->
                     if (!streaming) {
                         val head = soFar.trimStart().lowercase()
                         if (!("search:".startsWith(head) || head.startsWith("search:"))) {
@@ -83,7 +88,7 @@ class ChatStore : ViewModel() {
                 if (query == null) {
                     replace(pending.id, pending.copy(text = first))
                 } else {
-                    runSearchTurn(conv, pendingId = pending.id, query = query)
+                    runSearchTurn(conv, pendingId = pending.id, query = query, detailed = detailed)
                 }
             } catch (t: Throwable) {
                 fillLastEmpty("⚠️ ${t.message ?: t::class.simpleName ?: "error"}")
@@ -91,6 +96,9 @@ class ChatStore : ViewModel() {
             _status.value = Status.Idle
         }
     }
+
+    private fun styleFor(detailed: Boolean): String =
+        if (detailed) PromptParsing.DETAILED_STYLE else PromptParsing.CONCISE_STYLE
 
     /**
      * Send [input] and stream the reply. [onText] is invoked on each token
@@ -119,7 +127,12 @@ class ChatStore : ViewModel() {
      * breadcrumb, run the providers, fold results back into the same
      * Conversation as a follow-up turn, and render the grounded reply.
      */
-    private suspend fun runSearchTurn(conv: Conversation, pendingId: Long, query: String) {
+    private suspend fun runSearchTurn(
+        conv: Conversation,
+        pendingId: Long,
+        query: String,
+        detailed: Boolean,
+    ) {
         val tool = ChatMessage(ChatRole.Tool, "🔍 Searching: $query")
         replace(pendingId, tool)
 
@@ -136,7 +149,7 @@ class ChatStore : ViewModel() {
 
         val answer = ChatMessage(ChatRole.Model, "")
         _messages.update { it + answer }
-        val context = PromptParsing.formatSearchContext(results)
+        val context = PromptParsing.formatSearchContext(results) + "\n(${styleFor(detailed)})"
         // Second turn always streams live — it can't be a SEARCH directive
         // (the context block instructs the model not to emit another one).
         val second = streamReply(conv, context) { soFar ->

@@ -51,6 +51,7 @@ import com.zeiglerbd5.companion.gemmapoc.ui.theme.AppTheme
 fun ChatView(
     engine: Engine,
     appTheme: AppTheme,
+    detailed: Boolean,
     chatStore: ChatStore = viewModel(),
 ) {
     val messages by chatStore.messages.collectAsState()
@@ -84,7 +85,7 @@ fun ChatView(
         InputRow(
             appTheme = appTheme,
             sending = status is ChatStore.Status.Sending,
-            onSend = { text -> chatStore.send(engine, text) },
+            onSend = { text -> chatStore.send(engine, text, detailed) },
             modifier = Modifier
                 .fillMaxWidth()
                 .imePadding()

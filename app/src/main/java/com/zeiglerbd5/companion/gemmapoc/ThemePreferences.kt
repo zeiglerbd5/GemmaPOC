@@ -23,8 +23,16 @@ class ThemePreferences(context: Context) {
             prefs.edit().putString(KEY_THEME, value.name).apply()
         }
 
+    /** "In Depth" toggle — thorough answers when on, concise when off. */
+    var detailed: Boolean
+        get() = prefs.getBoolean(KEY_DETAILED, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_DETAILED, value).apply()
+        }
+
     private companion object {
         const val FILE_NAME = "ui_preferences"
         const val KEY_THEME = "theme"
+        const val KEY_DETAILED = "detailed"
     }
 }
