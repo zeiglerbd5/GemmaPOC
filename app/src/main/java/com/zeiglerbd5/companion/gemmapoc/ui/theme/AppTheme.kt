@@ -60,7 +60,7 @@ enum class AppTheme(val displayName: String) {
             Tactical -> Color(0xFFD4C19C).copy(alpha = 0.22f)
             Parchment -> Color(0xFFC8B482).copy(alpha = 0.35f)
             WarmCream -> Color(0xFFB4A078).copy(alpha = 0.3f)
-            Sky -> Color(0xFFFCE8A8).copy(alpha = 0.55f)
+            Sky -> Color(0xFF5E83B7)
         }
 
     /**
