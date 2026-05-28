@@ -94,7 +94,12 @@ fun ChatView(
 @Composable
 private fun MessageBubble(msg: ChatMessage, appTheme: AppTheme) {
     val isUser = msg.role == ChatRole.User
-    val bubbleColor = if (isUser) appTheme.userBubble else appTheme.modelBubble
+    val isTool = msg.role == ChatRole.Tool
+    val bubbleColor = when (msg.role) {
+        ChatRole.User -> appTheme.userBubble
+        ChatRole.Model -> appTheme.modelBubble
+        ChatRole.Tool -> appTheme.toolBubble
+    }
     val textColor = appTheme.bubbleText ?: LocalContentColor.current
 
     Row(
@@ -107,11 +112,20 @@ private fun MessageBubble(msg: ChatMessage, appTheme: AppTheme) {
                 .background(bubbleColor, RoundedCornerShape(14.dp))
                 .padding(horizontal = 12.dp, vertical = 10.dp),
         ) {
-            Text(
-                text = msg.text.ifEmpty { "…" },
-                color = textColor,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            Column {
+                if (isTool && msg.source != null) {
+                    Text(
+                        text = "From ${msg.source}",
+                        color = textColor.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+                Text(
+                    text = msg.text.ifEmpty { "…" },
+                    color = textColor,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
 }

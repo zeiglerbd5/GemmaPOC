@@ -250,6 +250,54 @@ clause.
 
 ---
 
+## 2026-05-28 — Agentic web search (Phase 1) working end-to-end
+
+**Reference:** iOS commits `10bdb65a` (agentic web search) + `0d3e31c2`
+(dual-provider). Ports the search loop, not yet the hardening passes.
+
+**What landed:**
+- `search/WebSearchProvider.kt` — SearchResult + provider interface +
+  dependency-free `httpGet` (HttpURLConnection, no OkHttp).
+- `search/DuckDuckGoProvider.kt` — HTML scrape of html.duckduckgo.com,
+  regex-parsed. Same fragility caveat as iOS: tune regexes when DDG
+  reshapes their markup.
+- `search/WikipediaProvider.kt` — w/api.php full-text search +
+  intro extracts, parsed with org.json (built into Android).
+- `search/SearchRouter.kt` — runs both in parallel, Wikipedia-first for
+  encyclopedic / named-entity queries (the `looksLikeNamedEntity`
+  keyword heuristic catches Gemma's flat lowercase queries).
+- `PromptParsing.kt` — parseSearchDirective, stripStraySearchDirective,
+  formatSearchContext (with the verbatim-copy + "say so if not found"
+  anti-hallucination directives), toolBreadcrumb, and SYSTEM_PERSONA
+  (verbatim from iOS PromptRunner.systemPersona).
+- `ChatStore` — installs SYSTEM_PERSONA + SamplerConfig(40, 0.95, 0.7)
+  on the Conversation, runs the SEARCH: tool loop: user turn → if reply
+  is `SEARCH: q`, run providers, fold results back as a follow-up turn,
+  re-ask, render grounded answer. Tool-role bubble shows the breadcrumb.
+- `ChatMessage` gains a Tool role + source field; ChatView renders tool
+  bubbles with a "From <source>" badge over AppTheme.toolBubble.
+- AndroidManifest: added INTERNET permission. **First non-on-device
+  behavior in the app** — scoped to user-initiated search per
+  ARCHITECTURE.md §2 invariant 4. LLM inference still never hits network.
+
+**Verified on emulator (Terminal theme):** "how long is the Stillwater
+River in Maine" — model emitted SEARCH:, reformulated to "length of the
+Stillwater River in Maine", SearchRouter went Wikipedia-first, returned
+the 2+1 merge, and the model answered "11.5-mile-long (18.5 km) side
+channel of the Penobscot River" — matches Wikipedia verbatim. ~13 s
+round trip (search + 2 inference passes). The exact question that
+returned "I don't know" pre-search now grounds correctly.
+
+**Deferred to Phase 2 (still open):** prompt-extraction defense,
+post-decode fact-check (unverifiedNumbers), best-of-N rerank, ephemeral
+privacy hints, location/time preamble, detail toggle, `/search` slash
+command, streaming, markdown rendering in bubbles, tappable source
+links.
+
+**Status:** resolved for Phase 1.
+
+---
+
 ## Template
 
 ```

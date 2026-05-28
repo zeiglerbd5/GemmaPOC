@@ -2,6 +2,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!--
+      Outbound network for user-initiated web search only (DuckDuckGo,
+      Wikipedia). On-device LLM inference never touches the network — see
+      ARCHITECTURE.md §2 invariant 4: outbound calls are limited to
+      explicit user-triggered tools.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"

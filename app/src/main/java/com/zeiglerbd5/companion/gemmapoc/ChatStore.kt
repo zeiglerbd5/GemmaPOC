@@ -2,8 +2,12 @@ package com.zeiglerbd5.companion.gemmapoc
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Conversation
+import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
+import com.google.ai.edge.litertlm.SamplerConfig
+import com.zeiglerbd5.companion.gemmapoc.search.SearchRouter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,16 +18,19 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Holds the conversation between the user and the model. Mirrors the iOS
- * sibling's `ConversationStore` shape — owns a single LiteRT-LM
- * [Conversation] across many turns so the KV cache survives, exposes the
- * message list as a [StateFlow] for Compose to observe, and serialises
- * sends through [Status] so the UI can disable input mid-generation.
+ * Holds the conversation between the user and the model and orchestrates
+ * the agentic-search loop. Mirrors the iOS sibling's `ConversationStore` +
+ * `PromptRunner`: owns a single LiteRT-LM [Conversation] (system persona +
+ * sampler installed once), exposes the message list as a [StateFlow], and
+ * runs the SEARCH: tool loop when the model asks to look something up.
  *
- * Single-shot inference (the old [PromptRunner]) is gone — this class
- * subsumes it. Streaming token-by-token output is a planned follow-up;
- * `sendMessageAsync(...)` returning `Flow<Message>` is the LiteRT-LM hook
- * for that.
+ * Loop: user turn → model reply. If the reply is `SEARCH: <query>`, run
+ * both providers, fold the results back as a follow-up user turn, re-ask,
+ * and render the grounded answer. Otherwise render the first reply.
+ *
+ * Streaming output and the iOS hardening passes (fact-check, best-of-N,
+ * prompt-extraction defense, ephemeral hints) are deferred — see
+ * POC-NOTES-android.md.
  */
 class ChatStore : ViewModel() {
 
@@ -38,6 +45,7 @@ class ChatStore : ViewModel() {
     private val _status = MutableStateFlow<Status>(Status.Idle)
     val status: StateFlow<Status> = _status.asStateFlow()
 
+    private val router = SearchRouter()
     private var conversation: Conversation? = null
 
     fun send(engine: Engine, text: String) {
@@ -45,24 +53,75 @@ class ChatStore : ViewModel() {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
 
-        val userMsg = ChatMessage(role = ChatRole.User, text = trimmed)
-        val pending = ChatMessage(role = ChatRole.Model, text = "")
-        _messages.update { it + userMsg + pending }
+        _messages.update { it + ChatMessage(ChatRole.User, trimmed) }
         _status.value = Status.Sending
 
         viewModelScope.launch {
-            val reply = try {
-                withContext(Dispatchers.IO) {
-                    val conv = conversation ?: engine.createConversation().also { conversation = it }
-                    conv.sendMessage(trimmed).toString()
+            val pending = ChatMessage(ChatRole.Model, "")
+            _messages.update { it + pending }
+            try {
+                val conv = withContext(Dispatchers.IO) { ensureConversation(engine) }
+                val first = withContext(Dispatchers.IO) { conv.sendMessage(trimmed).toString() }
+
+                val query = PromptParsing.parseSearchDirective(first)
+                if (query == null) {
+                    replace(pending.id, pending.copy(text = first))
+                } else {
+                    runSearchTurn(conv, pendingId = pending.id, query = query)
                 }
             } catch (t: Throwable) {
-                "⚠️ ${t.message ?: t::class.simpleName ?: "error"}"
-            }
-            _messages.update { msgs ->
-                msgs.dropLast(1) + pending.copy(text = reply)
+                fillLastEmpty("⚠️ ${t.message ?: t::class.simpleName ?: "error"}")
             }
             _status.value = Status.Idle
+        }
+    }
+
+    /**
+     * The model emitted `SEARCH: query`. Swap the pending bubble for a tool
+     * breadcrumb, run the providers, fold results back into the same
+     * Conversation as a follow-up turn, and render the grounded reply.
+     */
+    private suspend fun runSearchTurn(conv: Conversation, pendingId: Long, query: String) {
+        val tool = ChatMessage(ChatRole.Tool, "🔍 Searching: $query")
+        replace(pendingId, tool)
+
+        val results = withContext(Dispatchers.IO) {
+            runCatching { router.searchBoth(query) }.getOrDefault(emptyList())
+        }
+        replace(
+            tool.id,
+            tool.copy(
+                text = PromptParsing.toolBreadcrumb(query, results),
+                source = results.firstOrNull()?.source ?: "web",
+            ),
+        )
+
+        val answer = ChatMessage(ChatRole.Model, "")
+        _messages.update { it + answer }
+        val context = PromptParsing.formatSearchContext(results)
+        val second = withContext(Dispatchers.IO) { conv.sendMessage(context).toString() }
+        replace(answer.id, answer.copy(text = PromptParsing.stripStraySearchDirective(second)))
+    }
+
+    private fun ensureConversation(engine: Engine): Conversation =
+        conversation ?: engine.createConversation(
+            ConversationConfig(
+                systemInstruction = Contents.of(PromptParsing.SYSTEM_PERSONA),
+                samplerConfig = SamplerConfig(topK = 40, topP = 0.95, temperature = 0.7),
+            ),
+        ).also { conversation = it }
+
+    private fun replace(id: Long, newMsg: ChatMessage) {
+        _messages.update { msgs -> msgs.map { if (it.id == id) newMsg else it } }
+    }
+
+    private fun fillLastEmpty(errorText: String) {
+        _messages.update { msgs ->
+            if (msgs.isNotEmpty() && msgs.last().text.isEmpty()) {
+                msgs.dropLast(1) + msgs.last().copy(role = ChatRole.Model, text = errorText)
+            } else {
+                msgs + ChatMessage(ChatRole.Model, errorText)
+            }
         }
     }
 
@@ -79,11 +138,12 @@ class ChatStore : ViewModel() {
     }
 }
 
-enum class ChatRole { User, Model }
+enum class ChatRole { User, Model, Tool }
 
 data class ChatMessage(
     val role: ChatRole,
     val text: String,
+    val source: String? = null,
     val id: Long = idCounter.incrementAndGet(),
 ) {
     private companion object {
