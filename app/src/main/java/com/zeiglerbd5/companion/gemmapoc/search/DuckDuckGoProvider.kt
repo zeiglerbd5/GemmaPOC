@@ -1,6 +1,7 @@
 package com.zeiglerbd5.companion.gemmapoc.search
 
 import android.net.Uri
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URLEncoder
@@ -40,9 +41,26 @@ class DuckDuckGoProvider : WebSearchProvider {
                     "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
                 "Accept" to "text/html",
             ),
-        ) ?: return@withContext emptyList()
+        )
+        if (html == null) {
+            Log.w(TAG, "request failed (network error or non-2xx) for query: \"$q\"")
+            return@withContext emptyList()
+        }
 
-        parseResults(html)
+        val results = parseResults(html)
+        if (results.isEmpty()) {
+            // 200 OK but zero parsed results almost always means DDG reshaped
+            // their HTML and titleRegex/snippetRegex no longer match. The
+            // SearchRouter still falls back to Wikipedia, so this would fail
+            // silently without the log — which is exactly the "search went
+            // quiet and we don't know why" trap this warning exists to avoid.
+            Log.w(
+                TAG,
+                "0 results parsed from ${html.length} chars of HTML for query \"$q\" — " +
+                    "DDG markup may have changed; re-check titleRegex/snippetRegex against a fresh response",
+            )
+        }
+        results
     }
 
     private fun parseResults(html: String): List<SearchResult> {
@@ -77,4 +95,8 @@ class DuckDuckGoProvider : WebSearchProvider {
             .replace("&#39;", "'")
             .replace("&nbsp;", " ")
             .trim()
+
+    private companion object {
+        const val TAG = "DuckDuckGoProvider"
+    }
 }
