@@ -57,7 +57,9 @@ fun ChatView(
     val status by chatStore.status.collectAsState()
     val listState = rememberLazyListState()
 
-    LaunchedEffect(messages.size) {
+    // Re-scroll on new messages AND as the last bubble's text grows during
+    // streaming (message count is unchanged then, only the text length).
+    LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.lastIndex)
         }

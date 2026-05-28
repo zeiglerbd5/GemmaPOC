@@ -291,8 +291,8 @@ returned "I don't know" pre-search now grounds correctly.
 **Deferred to Phase 2 (still open):** prompt-extraction defense,
 post-decode fact-check (unverifiedNumbers), best-of-N rerank, ephemeral
 privacy hints, location/time preamble, detail toggle, `/search` slash
-command, streaming, markdown rendering in bubbles, tappable source
-links.
+command, markdown rendering in bubbles, tappable source links.
+(Streaming token output landed 2026-05-28.)
 
 **Status:** resolved for Phase 1.
 

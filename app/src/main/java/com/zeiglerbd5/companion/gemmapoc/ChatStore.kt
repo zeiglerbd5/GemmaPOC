@@ -9,9 +9,11 @@ import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.zeiglerbd5.companion.gemmapoc.search.SearchRouter
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -61,7 +63,21 @@ class ChatStore : ViewModel() {
             _messages.update { it + pending }
             try {
                 val conv = withContext(Dispatchers.IO) { ensureConversation(engine) }
-                val first = withContext(Dispatchers.IO) { conv.sendMessage(trimmed).toString() }
+
+                // First turn streams, but display is gated: the reply might be
+                // a `SEARCH:` directive, which is a tool instruction we must
+                // NOT show. Buffer silently until the head can no longer be a
+                // search directive, then stream live into the bubble.
+                var streaming = false
+                val first = streamReply(conv, trimmed) { soFar ->
+                    if (!streaming) {
+                        val head = soFar.trimStart().lowercase()
+                        if (!("search:".startsWith(head) || head.startsWith("search:"))) {
+                            streaming = true
+                        }
+                    }
+                    if (streaming) replace(pending.id, pending.copy(text = soFar))
+                }
 
                 val query = PromptParsing.parseSearchDirective(first)
                 if (query == null) {
@@ -74,6 +90,28 @@ class ChatStore : ViewModel() {
             }
             _status.value = Status.Idle
         }
+    }
+
+    /**
+     * Send [input] and stream the reply. [onText] is invoked on each token
+     * with the full accumulated text so far (the Flow emits incremental
+     * deltas; we accumulate). Returns the complete reply. Runs on IO so the
+     * blocking native generation never touches the main thread; UNLIMITED
+     * buffer so fast token bursts can't drop via trySend.
+     */
+    private suspend fun streamReply(
+        conv: Conversation,
+        input: String,
+        onText: (String) -> Unit,
+    ): String = withContext(Dispatchers.IO) {
+        val sb = StringBuilder()
+        conv.sendMessageAsync(input)
+            .buffer(Channel.UNLIMITED)
+            .collect { msg ->
+                sb.append(msg.toString())
+                onText(sb.toString())
+            }
+        sb.toString()
     }
 
     /**
@@ -99,7 +137,11 @@ class ChatStore : ViewModel() {
         val answer = ChatMessage(ChatRole.Model, "")
         _messages.update { it + answer }
         val context = PromptParsing.formatSearchContext(results)
-        val second = withContext(Dispatchers.IO) { conv.sendMessage(context).toString() }
+        // Second turn always streams live — it can't be a SEARCH directive
+        // (the context block instructs the model not to emit another one).
+        val second = streamReply(conv, context) { soFar ->
+            replace(answer.id, answer.copy(text = soFar))
+        }
         replace(answer.id, answer.copy(text = PromptParsing.stripStraySearchDirective(second)))
     }
 
