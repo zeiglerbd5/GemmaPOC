@@ -37,6 +37,14 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        unitTests {
+            // android.util.Log (and other framework stubs) return defaults
+            // instead of throwing "not mocked" in plain JVM unit tests — the
+            // ChatStore search loop logs breadcrumbs via Log.i.
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {

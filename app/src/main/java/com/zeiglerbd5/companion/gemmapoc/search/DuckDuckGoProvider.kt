@@ -72,9 +72,14 @@ class DuckDuckGoProvider : WebSearchProvider {
     internal fun parseResults(html: String): List<SearchResult> {
         val titles = titleRegex.findAll(html).toList()
         val snippets = snippetRegex.findAll(html).toList()
-        val n = minOf(titles.size, snippets.size, 5)
-        return (0 until n).mapNotNull { i ->
+        // Drop sponsored results BEFORE the take(5) cap so ads don't eat
+        // organic slots — otherwise a query with 2 ads up top would surface
+        // only 3 real results (and worse, an ad's tracking URL could leak
+        // into the model's grounding context on the agentic path).
+        val pairCount = minOf(titles.size, snippets.size)
+        return (0 until pairCount).mapNotNull { i ->
             val rawUrl = titles[i].groupValues[1]
+            if (isSponsored(rawUrl)) return@mapNotNull null
             val real = extractRealUrl(rawUrl) ?: rawUrl
             SearchResult(
                 title = stripHtml(titles[i].groupValues[2]),
@@ -82,8 +87,17 @@ class DuckDuckGoProvider : WebSearchProvider {
                 url = real,
                 source = name,
             )
-        }
+        }.take(5)
     }
+
+    /**
+     * DDG serves ads as `result__a` links too, but routed through their ad
+     * tracker (`//duckduckgo.com/y.js?ad_domain=…&ad_provider=…`) rather than
+     * the organic `/l/?uddg=` redirect. Match on those markers so sponsored
+     * entries never reach the result list.
+     */
+    private fun isSponsored(href: String): Boolean =
+        href.contains("/y.js") || href.contains("ad_domain=") || href.contains("ad_provider=")
 
     /**
      * `//duckduckgo.com/l/?uddg=ENCODED&rut=…` → decoded ENCODED. Returns

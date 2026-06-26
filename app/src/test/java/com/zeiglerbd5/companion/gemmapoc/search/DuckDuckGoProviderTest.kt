@@ -112,4 +112,37 @@ class DuckDuckGoProviderTest {
         val results = DuckDuckGoProvider().parseResults(twoResultHtml)
         assertTrue(results.all { it.source == "DuckDuckGo" })
     }
+
+    @Test fun dropsSponsoredResults() {
+        // First entry is a DDG ad (y.js tracker), second is organic. The ad
+        // must be dropped — and its tracking URL must never surface.
+        val html = """
+            <a rel="nofollow" class="result__a" href="//duckduckgo.com/y.js?ad_domain=tripadvisor.com&ad_provider=bingv7aa&click_metadata=abc">Helena Montana - The 10 Best Hotels (2026)</a>
+            <a class="result__snippet" href="x">Book now and save big on hotels.</a>
+            <a rel="nofollow" class="result__a" href="https://en.wikipedia.org/wiki/Helena,_Montana">Helena, Montana</a>
+            <a class="result__snippet" href="x">Capital city of Montana.</a>
+        """.trimIndent()
+        val results = DuckDuckGoProvider().parseResults(html)
+        assertEquals(1, results.size)
+        assertEquals("Helena, Montana", results[0].title)
+        assertTrue("no tracking URL should leak", results.none { it.url.contains("y.js") })
+    }
+
+    @Test fun sponsoredResultsDoNotEatOrganicSlots() {
+        // Two ads up top, then five organic. Filtering before the take(5)
+        // cap must still surface five organic results, not three.
+        val html = buildString {
+            for (i in 1..2) {
+                append("""<a rel="nofollow" class="result__a" href="//duckduckgo.com/y.js?ad_domain=ad$i.com&ad_provider=x">Ad $i</a>""")
+                append("\n<a class=\"result__snippet\" href=\"x\">Sponsored $i</a>\n")
+            }
+            for (i in 1..5) {
+                append("""<a rel="nofollow" class="result__a" href="https://example.com/page$i">Page $i</a>""")
+                append("\n<a class=\"result__snippet\" href=\"x\">Snippet $i</a>\n")
+            }
+        }
+        val results = DuckDuckGoProvider().parseResults(html)
+        assertEquals(5, results.size)
+        assertEquals(listOf("Page 1", "Page 2", "Page 3", "Page 4", "Page 5"), results.map { it.title })
+    }
 }
