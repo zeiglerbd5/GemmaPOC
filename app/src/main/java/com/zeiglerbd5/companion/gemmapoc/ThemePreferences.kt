@@ -30,9 +30,21 @@ class ThemePreferences(context: Context) {
             prefs.edit().putBoolean(KEY_DETAILED, value).apply()
         }
 
+    /**
+     * "Web Search" toggle — when on (default) the agent may run web searches
+     * to ground its answers; when off, all search traffic is suppressed and
+     * the model answers from its own knowledge.
+     */
+    var searchEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SEARCH_ENABLED, true)
+        set(value) {
+            prefs.edit().putBoolean(KEY_SEARCH_ENABLED, value).apply()
+        }
+
     private companion object {
         const val FILE_NAME = "ui_preferences"
         const val KEY_THEME = "theme"
         const val KEY_DETAILED = "detailed"
+        const val KEY_SEARCH_ENABLED = "search_enabled"
     }
 }

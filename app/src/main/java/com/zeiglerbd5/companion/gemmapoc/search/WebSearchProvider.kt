@@ -26,6 +26,20 @@ interface WebSearchProvider {
 }
 
 /**
+ * Errors a [WebSearchProvider] can raise. Mirrors the iOS sibling's
+ * `WebSearchError`. [ParseFailure] is the one tests assert on directly —
+ * a provider that gets a 200 OK with a body it can't decode throws it
+ * rather than silently returning empty, so a broken response shape is
+ * distinguishable from a genuine no-results.
+ */
+sealed class WebSearchError(message: String) : Exception(message) {
+    object InvalidQuery : WebSearchError("Empty search query.")
+    class NetworkFailure(cause: Throwable) : WebSearchError("Network error: ${cause.message}")
+    class ParseFailure(detail: String) : WebSearchError("Parse error: $detail")
+    object NoResults : WebSearchError("No results.")
+}
+
+/**
  * Blocking GET returning the response body, or null on any failure. Call
  * from a background dispatcher. Kept dependency-free (HttpURLConnection)
  * so the search layer adds no third-party network library — matters under

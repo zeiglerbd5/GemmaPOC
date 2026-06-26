@@ -1,9 +1,10 @@
 package com.zeiglerbd5.companion.gemmapoc.search
 
-import android.net.Uri
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.net.URLDecoder
 import java.net.URLEncoder
 
 /**
@@ -63,7 +64,12 @@ class DuckDuckGoProvider : WebSearchProvider {
         results
     }
 
-    private fun parseResults(html: String): List<SearchResult> {
+    /**
+     * Non-private so the regex-based scrape can be exercised against
+     * captured fixture HTML in tests without doing a real network call.
+     */
+    @VisibleForTesting
+    internal fun parseResults(html: String): List<SearchResult> {
         val titles = titleRegex.findAll(html).toList()
         val snippets = snippetRegex.findAll(html).toList()
         val n = minOf(titles.size, snippets.size, 5)
@@ -79,11 +85,26 @@ class DuckDuckGoProvider : WebSearchProvider {
         }
     }
 
-    /** `//duckduckgo.com/l/?uddg=ENCODED` → decoded ENCODED. */
+    /**
+     * `//duckduckgo.com/l/?uddg=ENCODED&rut=…` → decoded ENCODED. Returns
+     * the input unchanged if it already looks like a real URL. Pure-JVM
+     * (no `android.net.Uri`) so [parseResults] is unit-testable off-device:
+     * pull the `uddg` query param out by hand and percent-decode it.
+     */
     private fun extractRealUrl(ddgUrl: String): String? {
         if (ddgUrl.startsWith("http")) return ddgUrl
-        val normalized = if (ddgUrl.startsWith("//")) "https:$ddgUrl" else ddgUrl
-        return runCatching { Uri.parse(normalized).getQueryParameter("uddg") }.getOrNull()
+        val queryStart = ddgUrl.indexOf('?')
+        if (queryStart < 0) return null
+        val query = ddgUrl.substring(queryStart + 1)
+        for (pair in query.split('&')) {
+            val eq = pair.indexOf('=')
+            if (eq < 0) continue
+            if (pair.substring(0, eq) == "uddg") {
+                val encoded = pair.substring(eq + 1)
+                return runCatching { URLDecoder.decode(encoded, "UTF-8") }.getOrNull()
+            }
+        }
+        return null
     }
 
     private fun stripHtml(s: String): String =

@@ -10,8 +10,8 @@ import kotlinx.coroutines.coroutineScope
  * encyclopedic / named-entity queries, DuckDuckGo-first otherwise).
  */
 class SearchRouter(
-    private val wikipedia: WikipediaProvider = WikipediaProvider(),
-    private val duckduckgo: DuckDuckGoProvider = DuckDuckGoProvider(),
+    private val wikipedia: WebSearchProvider = WikipediaProvider(),
+    private val duckduckgo: WebSearchProvider = DuckDuckGoProvider(),
 ) {
     suspend fun searchBoth(query: String): List<SearchResult> = coroutineScope {
         val wikiTask = async { runCatching { wikipedia.search(query) }.getOrDefault(emptyList()) }
@@ -30,6 +30,25 @@ class SearchRouter(
             addAll(primary.take(2))
             addAll(secondary.take(1))
         }
+    }
+
+    /**
+     * Single-provider path used by the explicit `/search` command. Routes
+     * to the preferred provider for the query shape, then falls through to
+     * the other if the first comes up empty or throws. Unlike [searchBoth],
+     * the fallback's error is NOT swallowed — if both providers fail, the
+     * secondary's exception propagates so the caller can surface it.
+     */
+    suspend fun search(query: String): List<SearchResult> {
+        val wikipediaFirst = isEncyclopedic(query) || looksLikeNamedEntity(query)
+        val primary = if (wikipediaFirst) wikipedia else duckduckgo
+        val secondary = if (wikipediaFirst) duckduckgo else wikipedia
+
+        val primaryResults = runCatching { primary.search(query) }.getOrNull()
+        if (primaryResults != null && primaryResults.isNotEmpty()) {
+            return primaryResults
+        }
+        return secondary.search(query)
     }
 
     /** Question-stem detection → Wikipedia is usually the right hit. */

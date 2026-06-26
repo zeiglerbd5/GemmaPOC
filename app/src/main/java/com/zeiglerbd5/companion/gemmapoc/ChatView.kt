@@ -52,6 +52,7 @@ fun ChatView(
     engine: Engine,
     appTheme: AppTheme,
     detailed: Boolean,
+    searchEnabled: Boolean,
     chatStore: ChatStore = viewModel(),
 ) {
     val messages by chatStore.messages.collectAsState()
@@ -85,7 +86,13 @@ fun ChatView(
         InputRow(
             appTheme = appTheme,
             sending = status is ChatStore.Status.Sending,
-            onSend = { text -> chatStore.send(engine, text, detailed) },
+            onSend = { text ->
+                // The toggles live on the store; push the current UI values in
+                // before each send so a mid-chat flip takes effect next turn.
+                chatStore.detailedMode = detailed
+                chatStore.searchEnabled = searchEnabled
+                chatStore.send(engine, text)
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .imePadding()

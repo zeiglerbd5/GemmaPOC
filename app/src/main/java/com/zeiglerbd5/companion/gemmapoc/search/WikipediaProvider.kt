@@ -1,7 +1,9 @@
 package com.zeiglerbd5.companion.gemmapoc.search
 
+import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONException
 import org.json.JSONObject
 import java.net.URLEncoder
 
@@ -43,16 +45,30 @@ class WikipediaProvider : WebSearchProvider {
             mapOf("User-Agent" to "Companion-ai-Android/0.1 (https://github.com/zeiglerbd5/GemmaPOC)"),
         ) ?: return@withContext emptyList()
 
-        parse(json)
+        parseResults(json)
     }
 
-    private fun parse(json: String): List<SearchResult> {
-        // { "query": { "pages": [ { "index": 1, "title": …, "extract": … } ] } }
-        // `index` preserves search-relevance ordering; the API doesn't sort
-        // pages by relevance otherwise.
-        val pages = runCatching {
-            JSONObject(json).optJSONObject("query")?.optJSONArray("pages")
-        }.getOrNull() ?: return emptyList()
+    /**
+     * Non-private so JSON decoding + URL construction can be exercised
+     * against captured fixture bytes in tests without a real network
+     * round-trip. Throws [WebSearchError.ParseFailure] when the body isn't
+     * valid JSON (a 200 with a broken shape), but returns an empty list for
+     * valid JSON that simply has no `query`/`pages` — that's a real
+     * no-results, not a parse error.
+     *
+     * Response shape (formatversion=2 with generator=search):
+     *   { "query": { "pages": [ { "index": 1, "title": …, "extract": … } ] } }
+     * `index` preserves search-relevance ordering; the API doesn't sort
+     * pages by relevance otherwise.
+     */
+    @VisibleForTesting
+    internal fun parseResults(json: String): List<SearchResult> {
+        val root = try {
+            JSONObject(json)
+        } catch (e: JSONException) {
+            throw WebSearchError.ParseFailure("unexpected Wikipedia response shape")
+        }
+        val pages = root.optJSONObject("query")?.optJSONArray("pages") ?: return emptyList()
 
         val indexed = ArrayList<Pair<Int, SearchResult>>(pages.length())
         for (i in 0 until pages.length()) {

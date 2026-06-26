@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
             val prefs = remember { ThemePreferences(applicationContext) }
             var appTheme by remember { mutableStateOf(prefs.theme) }
             var detailed by remember { mutableStateOf(prefs.detailed) }
+            var searchEnabled by remember { mutableStateOf(prefs.searchEnabled) }
             GemmaPOCTheme(appTheme = appTheme) {
                 AppScaffold(
                     appTheme = appTheme,
@@ -58,6 +59,11 @@ class MainActivity : ComponentActivity() {
                     onToggleDetailed = {
                         detailed = !detailed
                         prefs.detailed = detailed
+                    },
+                    searchEnabled = searchEnabled,
+                    onToggleSearch = {
+                        searchEnabled = !searchEnabled
+                        prefs.searchEnabled = searchEnabled
                     },
                 )
             }
@@ -74,6 +80,8 @@ private fun AppScaffold(
     onThemeChange: (AppTheme) -> Unit,
     detailed: Boolean,
     onToggleDetailed: () -> Unit,
+    searchEnabled: Boolean,
+    onToggleSearch: () -> Unit,
     loader: ModelLoader = viewModel(),
 ) {
     val state by loader.state.collectAsState()
@@ -102,6 +110,8 @@ private fun AppScaffold(
                         onThemeChange = onThemeChange,
                         detailed = detailed,
                         onToggleDetailed = onToggleDetailed,
+                        searchEnabled = searchEnabled,
+                        onToggleSearch = onToggleSearch,
                     )
                 },
                 actions = {
@@ -114,7 +124,13 @@ private fun AppScaffold(
         val ready = state as? LoadState.Ready
         if (ready != null) {
             Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
-                ChatView(engine = ready.engine, appTheme = appTheme, detailed = detailed, chatStore = chatStore)
+                ChatView(
+                    engine = ready.engine,
+                    appTheme = appTheme,
+                    detailed = detailed,
+                    searchEnabled = searchEnabled,
+                    chatStore = chatStore,
+                )
             }
         } else {
             Column(
@@ -147,6 +163,8 @@ private fun AppMenu(
     onThemeChange: (AppTheme) -> Unit,
     detailed: Boolean,
     onToggleDetailed: () -> Unit,
+    searchEnabled: Boolean,
+    onToggleSearch: () -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
     var showThemes by remember { mutableStateOf(false) }
@@ -166,6 +184,11 @@ private fun AppMenu(
                 text = { Text("In Depth") },
                 onClick = onToggleDetailed,
                 trailingIcon = { Text(if (detailed) "✓" else "") },
+            )
+            DropdownMenuItem(
+                text = { Text("Web Search") },
+                onClick = onToggleSearch,
+                trailingIcon = { Text(if (searchEnabled) "✓" else "") },
             )
             DropdownMenuItem(
                 text = { Text("Theme") },
