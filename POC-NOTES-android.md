@@ -162,7 +162,7 @@ Tactical, Parchment, Warm Cream, Sky) backed by `@AppStorage("theme")`,
 with theme picker in a toolbar submenu and themed surfaces across chat
 background, bubbles (user/model/tool), input field, send button tint,
 and a preferred light/dark color scheme. Also rebranded "GemmaPOC" →
-"OnBoard AI" (display name + nav title only — bundle ID kept) and
+"OnHand_AI" (display name + nav title only — bundle ID kept) and
 auto-loads the model on first view appearance via `.task`.
 
 **Implication:**
@@ -178,7 +178,7 @@ auto-loads the model on first view appearance via `.task`.
   for persistence. (DataStore would be more idiomatic, but for one
   string preference it's not worth the dep + Flow plumbing.)
 - App display name updated in `strings.xml`. Compose `TopAppBar` title
-  is `"OnBoard AI"`. Bundle ID / package name unchanged, matching the
+  is `"OnHand_AI"`. Bundle ID / package name unchanged, matching the
   iOS decision to avoid project regen risk.
 - `LaunchedEffect(Unit) { if (state is Idle) loader.load() }` mirrors
   the iOS `.task` auto-load. The "Load model" button stays visible as
@@ -237,7 +237,7 @@ landing on Android.
 **Reference:** iOS commit `50bcf4a9` (rebrand section).
 
 **Observation:** iOS system prompt now instructs the model to
-introduce itself as "OnBoard AI" and never name Gemma, Google,
+introduce itself as "OnHand_AI" and never name Gemma, Google,
 LiteRT, MLX, or any underlying technology. Android has no system
 prompt yet.
 

@@ -71,7 +71,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private const val APP_TITLE = "OnBoard AI"
+private const val APP_TITLE = "OnHand_AI"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
