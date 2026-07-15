@@ -3,10 +3,11 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!--
-      Outbound network for user-initiated web search only (DuckDuckGo,
-      Wikipedia). On-device LLM inference never touches the network — see
-      ARCHITECTURE.md §2 invariant 4: outbound calls are limited to
-      explicit user-triggered tools.
+      Outbound network for user-initiated actions only: the one-time model
+      download (explicit consent tap on first launch) and web search
+      (DuckDuckGo, Wikipedia). On-device LLM inference never touches the
+      network — see ARCHITECTURE.md §2 invariant 4: outbound calls are
+      limited to explicit user-triggered tools.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
 
