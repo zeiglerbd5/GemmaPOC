@@ -46,9 +46,9 @@ once (so the directory exists).
 #    dir is created. The "Load model" button will fail with a FAILED
 #    state telling you exactly which path to push to.
 
-# 3. Push the model. With the app's package id baked in:
+# 3. Push the model. With the app's application id baked in:
 adb push gemma-4-E2B-it.litertlm \
-  /sdcard/Android/data/com.zeiglerbd5.companion.gemmapoc/files/
+  /sdcard/Android/data/ai.stillwaterai.onhand/files/
 
 # 4. Tap "Load model" in the app. First load takes ~10s while LiteRT-LM
 #    deserializes and warms up.

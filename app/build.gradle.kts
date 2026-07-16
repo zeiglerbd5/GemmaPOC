@@ -12,13 +12,33 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.zeiglerbd5.companion.gemmapoc"
+        // Play Store identity — permanent after first Play upload. Differs
+        // from the source package/namespace (kept as the original POC name
+        // to avoid a pointless mass refactor); only this ID is public.
+        applicationId = "ai.stillwaterai.onhand"
         minSdk = 31
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Play upload key. Credentials live in ~/.gradle/gradle.properties
+    // (ONHAND_UPLOAD_*), never in the repo. On machines without them the
+    // release build simply produces an unsigned bundle — debug builds are
+    // unaffected. Play App Signing holds the real signing key; this
+    // keystore only authenticates uploads.
+    val uploadStoreFile = providers.gradleProperty("ONHAND_UPLOAD_STORE_FILE").orNull
+    if (uploadStoreFile != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(uploadStoreFile)
+                storePassword = providers.gradleProperty("ONHAND_UPLOAD_STORE_PASSWORD").get()
+                keyAlias = providers.gradleProperty("ONHAND_UPLOAD_KEY_ALIAS").get()
+                keyPassword = providers.gradleProperty("ONHAND_UPLOAD_KEY_PASSWORD").get()
+            }
+        }
     }
 
     buildTypes {
@@ -28,6 +48,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.findByName("release")
         }
     }
     compileOptions {

@@ -24,7 +24,7 @@ import java.net.URL
  * Sideloading still works and skips the download entirely:
  *
  *     adb push gemma-4-E2B-it.litertlm \
- *       /sdcard/Android/data/com.zeiglerbd5.companion.gemmapoc/files/
+ *       /sdcard/Android/data/ai.stillwaterai.onhand/files/
  */
 class ModelLoader(application: Application) : AndroidViewModel(application) {
 
