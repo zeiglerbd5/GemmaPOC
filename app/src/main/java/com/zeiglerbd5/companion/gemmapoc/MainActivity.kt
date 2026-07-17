@@ -149,13 +149,19 @@ private fun AppScaffold(
     val state by loader.state.collectAsState()
     val downloadProgress by loader.downloadProgress.collectAsState()
 
-    // Auto-load only when the model file already exists locally — that's a
-    // fast local-file open, not a network download. First launch (no cache)
-    // shows a consent card and waits for the button tap instead of
-    // auto-starting the 2.6 GB pull (App Store guideline 4.2.3(ii); Play
-    // has the same expectation).
+    // Auto-load when the model file already exists locally (fast local-file
+    // open, not a network download) OR when a DownloadManager job from a
+    // previous run is still in flight — the user already consented, so
+    // reattach and show progress. First launch (neither) shows a consent
+    // card and waits for the button tap instead of auto-starting the
+    // 2.6 GB pull (App Store guideline 4.2.3(ii); Play has the same
+    // expectation).
     LaunchedEffect(Unit) {
-        if (state is LoadState.Idle && loader.isModelCached()) loader.load()
+        if (state is LoadState.Idle &&
+            (loader.isModelCached() || loader.hasActiveDownload())
+        ) {
+            loader.load()
+        }
     }
 
     // Same ChatStore instance ChatView resolves via viewModel() (the
@@ -210,7 +216,8 @@ private fun AppScaffold(
                 SetupSection(
                     state = state,
                     downloadProgress = downloadProgress,
-                    needsConsent = state is LoadState.Idle && !loader.isModelCached(),
+                    needsConsent = state is LoadState.Idle &&
+                        !loader.isModelCached() && !loader.hasActiveDownload(),
                     modelFilePath = loader.modelFile().absolutePath,
                     onLoad = loader::load,
                 )

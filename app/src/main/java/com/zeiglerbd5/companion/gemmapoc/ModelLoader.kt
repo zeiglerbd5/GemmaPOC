@@ -1,25 +1,36 @@
 package com.zeiglerbd5.companion.gemmapoc
 
 import android.app.Application
+import android.app.DownloadManager
+import android.content.Context
+import android.net.Uri
+import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * Downloads (once) and loads the Gemma 4 E2B `.litertlm` model, then
  * exposes the ready [Engine]. Mirrors the iOS sibling's `ModelLoader.swift`
  * shape — same state machine, same Engine / EngineConfig API surface, same
  * model file, same R2 hosting.
+ *
+ * The download goes through Android's [DownloadManager] system service, not
+ * an in-process HTTP client: a 2.6 GB pull takes 5–20 minutes, and an
+ * in-process download dies the moment the user backgrounds the app or the
+ * screen locks (the exact bug the iOS build shipped with). DownloadManager
+ * survives app suspension and death, retries on network drops, and shows a
+ * system progress notification. If the app is killed mid-download, the next
+ * launch reattaches to the in-flight download instead of restarting it.
  *
  * Sideloading still works and skips the download entirely:
  *
@@ -57,6 +68,14 @@ class ModelLoader(application: Application) : AndroidViewModel(application) {
     private val _downloadProgress = MutableStateFlow<DownloadProgress?>(null)
     val downloadProgress: StateFlow<DownloadProgress?> = _downloadProgress.asStateFlow()
 
+    private val downloadManager: DownloadManager
+        get() = getApplication<Application>()
+            .getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+
+    private val prefs
+        get() = getApplication<Application>()
+            .getSharedPreferences("model_download", Context.MODE_PRIVATE)
+
     /**
      * App-private external-storage path for the model file. Also the
      * `adb push` sideload target. No runtime permission needed on API 31+.
@@ -67,6 +86,9 @@ class ModelLoader(application: Application) : AndroidViewModel(application) {
         return File(dir, MODEL_FILENAME)
     }
 
+    /** DownloadManager writes here; renamed to [modelFile] on completion. */
+    private fun partFile(): File = File(modelFile().parentFile, "$MODEL_FILENAME.part")
+
     /**
      * Whether the model file already exists locally. Distinguishes "first
      * launch, need consent to download" from "repeat launch, safe to
@@ -74,6 +96,21 @@ class ModelLoader(application: Application) : AndroidViewModel(application) {
      * 4.2.3(ii) enforces) explicit consent before a multi-GB download.
      */
     fun isModelCached(): Boolean = modelFile().exists()
+
+    /**
+     * Whether a DownloadManager job from a previous app run is still
+     * running (or finished while we were dead). Lets a relaunch mid-download
+     * reattach — showing progress — instead of re-asking for consent.
+     */
+    fun hasActiveDownload(): Boolean {
+        val id = prefs.getLong(PREF_DOWNLOAD_ID, -1L)
+        if (id == -1L) return false
+        val status = queryStatus(id)?.first
+        return status == DownloadManager.STATUS_PENDING ||
+            status == DownloadManager.STATUS_RUNNING ||
+            status == DownloadManager.STATUS_PAUSED ||
+            status == DownloadManager.STATUS_SUCCESSFUL
+    }
 
     fun load() {
         viewModelScope.launch {
@@ -110,56 +147,83 @@ class ModelLoader(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Streams the model from R2 to [dest] if it isn't already there,
-     * publishing progress from the read loop. A manual
-     * HttpURLConnection read loop counts bytes itself, so progress can't
-     * silently stop firing (the iOS async-download API had exactly that
-     * bug and had to drop to a delegate-based download task). Writes to a
-     * `.part` file and renames on success so a killed download never
-     * passes the [isModelCached] check.
+     * Ensures the model file exists locally, downloading via DownloadManager
+     * if needed. Reuses an in-flight download from a previous app run when
+     * one exists; otherwise enqueues a fresh one. Suspends (polling status +
+     * progress) until the file is in place or the download fails.
      */
-    private fun ensureModelDownloaded(dest: File) {
+    private suspend fun ensureModelDownloaded(dest: File) {
         if (dest.exists()) return
 
-        val part = File(dest.parentFile, dest.name + ".part")
-        part.delete()
-
-        val conn = (URL(MODEL_URL).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 15_000
-            readTimeout = 30_000
+        var id = prefs.getLong(PREF_DOWNLOAD_ID, -1L)
+        val activeStates = setOf(
+            DownloadManager.STATUS_PENDING,
+            DownloadManager.STATUS_RUNNING,
+            DownloadManager.STATUS_PAUSED,
+            DownloadManager.STATUS_SUCCESSFUL,
+        )
+        if (id == -1L || queryStatus(id)?.first !in activeStates) {
+            partFile().delete()
+            val request = DownloadManager.Request(Uri.parse(MODEL_URL))
+                .setTitle("OnHand_AI model")
+                .setDescription("One-time AI model download")
+                .setNotificationVisibility(
+                    DownloadManager.Request.VISIBILITY_VISIBLE)
+                .setDestinationInExternalFilesDir(
+                    getApplication(), null, partFile().name)
+            id = downloadManager.enqueue(request)
+            prefs.edit { putLong(PREF_DOWNLOAD_ID, id) }
         }
-        try {
-            val code = conn.responseCode
-            if (code !in 200..299) throw java.io.IOException("HTTP $code downloading model")
 
-            val total = conn.contentLengthLong // -1 when the server omits it
-            _downloadProgress.value = DownloadProgress(0L, total)
-
-            conn.inputStream.use { input ->
-                part.outputStream().use { output ->
-                    val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
-                    var done = 0L
-                    while (true) {
-                        val n = input.read(buffer)
-                        if (n < 0) break
-                        output.write(buffer, 0, n)
-                        done += n
-                        _downloadProgress.value = DownloadProgress(done, total)
+        while (true) {
+            val (status, reason) = queryStatus(id)
+                ?: throw IllegalStateException(
+                    "Download disappeared (cancelled from notification?)")
+            when (status) {
+                DownloadManager.STATUS_SUCCESSFUL -> {
+                    prefs.edit { remove(PREF_DOWNLOAD_ID) }
+                    _downloadProgress.value = null
+                    if (!partFile().renameTo(dest)) {
+                        partFile().delete()
+                        throw IllegalStateException(
+                            "Could not move downloaded file into place")
                     }
+                    return
+                }
+                DownloadManager.STATUS_FAILED -> {
+                    downloadManager.remove(id)
+                    prefs.edit { remove(PREF_DOWNLOAD_ID) }
+                    _downloadProgress.value = null
+                    throw IllegalStateException(failureMessage(reason))
+                }
+                else -> {
+                    queryProgress(id)?.let { _downloadProgress.value = it }
+                    delay(PROGRESS_POLL_MS)
                 }
             }
-
-            if (!part.renameTo(dest)) {
-                throw java.io.IOException("Could not move downloaded file into place")
-            }
-        } catch (t: Throwable) {
-            part.delete()
-            throw t
-        } finally {
-            conn.disconnect()
-            _downloadProgress.value = null
         }
     }
+
+    /** (status, reason) for a DownloadManager id, or null if unknown. */
+    private fun queryStatus(id: Long): Pair<Int, Int>? =
+        downloadManager.query(DownloadManager.Query().setFilterById(id))?.use { c ->
+            if (!c.moveToFirst()) return null
+            Pair(
+                c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)),
+                c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)),
+            )
+        }
+
+    private fun queryProgress(id: Long): DownloadProgress? =
+        downloadManager.query(DownloadManager.Query().setFilterById(id))?.use { c ->
+            if (!c.moveToFirst()) return null
+            DownloadProgress(
+                bytesDone = c.getLong(c.getColumnIndexOrThrow(
+                    DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)),
+                bytesTotal = c.getLong(c.getColumnIndexOrThrow(
+                    DownloadManager.COLUMN_TOTAL_SIZE_BYTES)),
+            )
+        }
 
     override fun onCleared() {
         super.onCleared()
@@ -178,7 +242,20 @@ class ModelLoader(application: Application) : AndroidViewModel(application) {
         const val MODEL_URL =
             "https://pub-4b7dd739c5094d23ba564623b197c31c.r2.dev/gemma-4-E2B-it.litertlm"
 
-        private const val DOWNLOAD_BUFFER_SIZE = 256 * 1024
+        private const val PREF_DOWNLOAD_ID = "download_id"
+        private const val PROGRESS_POLL_MS = 500L
+
+        /** Human-readable text for DownloadManager failure reasons. */
+        fun failureMessage(reason: Int): String = when (reason) {
+            DownloadManager.ERROR_INSUFFICIENT_SPACE ->
+                "Not enough storage space. About 3 GB free is required."
+            DownloadManager.ERROR_CANNOT_RESUME ->
+                "Download could not resume after interruption. Please retry."
+            DownloadManager.ERROR_HTTP_DATA_ERROR,
+            DownloadManager.ERROR_UNHANDLED_HTTP_CODE ->
+                "Network error during download. Please retry."
+            else -> "Download failed (code $reason). Please retry."
+        }
 
         /**
          * "890 MB" below 1 GiB, "2.53 GB" above — matches the iOS readout.
