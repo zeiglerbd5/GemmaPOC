@@ -87,16 +87,16 @@ private fun AppTheme.toColorScheme(systemDark: Boolean): androidx.compose.materi
         onBackground = onSurface,
         surface = background ?: base.surface,
         onSurface = onSurface,
-        surfaceVariant = modelBubble,
+        surfaceVariant = modelBubble(dark),
         onSurfaceVariant = onSurface,
         // Card defaults to surfaceContainerLow; cover the whole family so
         // every container surface picks up the theme instead of falling
         // through to lightColorScheme()'s pale pink defaults.
-        surfaceContainerLowest = inputBackground,
-        surfaceContainerLow = inputBackground,
-        surfaceContainer = inputBackground,
-        surfaceContainerHigh = inputBackground,
-        surfaceContainerHighest = inputBackground,
-        outline = inputBorder,
+        surfaceContainerLowest = inputBackground(dark),
+        surfaceContainerLow = inputBackground(dark),
+        surfaceContainer = inputBackground(dark),
+        surfaceContainerHigh = inputBackground(dark),
+        surfaceContainerHighest = inputBackground(dark),
+        outline = inputBorder(dark),
     )
 }

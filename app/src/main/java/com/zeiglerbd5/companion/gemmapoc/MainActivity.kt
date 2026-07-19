@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -33,6 +35,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -41,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -173,6 +177,12 @@ private fun AppScaffold(
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        // safeDrawing includes the IME: innerPadding grows when the
+        // keyboard opens, so content (the chat input row) rises with it.
+        // This is the ONLY place keyboard insets are applied — a second
+        // imePadding() in ChatView double-counted the keyboard height and
+        // floated the input row to mid-screen (Galaxy Fold report).
+        contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text(APP_TITLE) },
@@ -220,6 +230,7 @@ private fun AppScaffold(
                         !loader.isModelCached() && !loader.hasActiveDownload(),
                     modelFilePath = loader.modelFile().absolutePath,
                     onLoad = loader::load,
+                    onDeleteModel = loader::deleteModelAndReset,
                 )
             }
         }
@@ -328,6 +339,7 @@ private fun SetupSection(
     needsConsent: Boolean,
     modelFilePath: String,
     onLoad: () -> Unit,
+    onDeleteModel: () -> Unit,
 ) {
     when {
         downloadProgress != null -> DownloadCard(downloadProgress)
@@ -348,6 +360,23 @@ private fun SetupSection(
                 else -> "Loading…"
             }
         )
+    }
+
+    // Escape hatch for a damaged model file: plain Retry skips the
+    // download (the file exists) and hits the same engine error forever.
+    if ((state as? LoadState.Failed)?.modelMayBeCorrupt == true) {
+        Text(
+            text = "If retrying keeps failing, the model file may be " +
+                "damaged. Delete it and download again:",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Button(
+            onClick = onDeleteModel,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Delete model & re-download")
+        }
     }
 }
 
@@ -399,6 +428,16 @@ private fun ConsentCard() {
 /** Live download progress: linear bar, percentage, and byte readout. */
 @Composable
 private fun DownloadCard(progress: ModelLoader.DownloadProgress) {
+    // Keep the screen awake while the download card is showing: once the
+    // screen sleeps, Android throttles background network (Doze) and a
+    // 7-minute download stretches past 30 (Galaxy Fold report). Cleared
+    // automatically when this card leaves composition.
+    val view = LocalView.current
+    DisposableEffect(Unit) {
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = false }
+    }
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -410,8 +449,15 @@ private fun DownloadCard(progress: ModelLoader.DownloadProgress) {
             )
             Text(
                 text = "First-time setup. OnHand_AI runs entirely on your " +
-                    "device, so it needs to download the model once (~2.6 GB). " +
-                    "Please keep the app open on Wi-Fi.",
+                    "device, so it needs to download the model once (~2.6 GB).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "The download is fastest while this screen stays " +
+                    "open, so we'll keep your screen awake. You can switch " +
+                    "apps or lock your phone — the download continues in " +
+                    "the background, just more slowly.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

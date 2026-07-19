@@ -44,7 +44,16 @@ class ModelLoader(application: Application) : AndroidViewModel(application) {
         data object Locating : LoadState
         data class Loading(val message: String) : LoadState
         data class Ready(val engine: Engine) : LoadState
-        data class Failed(val message: String) : LoadState
+        data class Failed(
+            val message: String,
+            /**
+             * True when the engine rejected an existing model file —
+             * usually a damaged download. Enables the "delete model and
+             * re-download" recovery path: plain Retry would skip the
+             * download (file exists) and hit the same error forever.
+             */
+            val modelMayBeCorrupt: Boolean = false,
+        ) : LoadState
     }
 
     private val _state = MutableStateFlow<LoadState>(LoadState.Idle)
@@ -141,7 +150,10 @@ class ModelLoader(application: Application) : AndroidViewModel(application) {
                 }
                 _state.value = LoadState.Ready(engine)
             } catch (t: Throwable) {
-                _state.value = LoadState.Failed("Engine init failed: ${t.message}\n\n$t")
+                _state.value = LoadState.Failed(
+                    "Engine init failed: ${t.message}",
+                    modelMayBeCorrupt = true,
+                )
             }
         }
     }
@@ -162,6 +174,15 @@ class ModelLoader(application: Application) : AndroidViewModel(application) {
             DownloadManager.STATUS_PAUSED,
             DownloadManager.STATUS_SUCCESSFUL,
         )
+        // A download that DownloadManager thinks is alive but whose .part
+        // file is gone would resume mid-file into a recreated sparse file —
+        // correct size, zero-filled head, "invalid magic number" at engine
+        // init. Cancel it and start clean instead of reattaching.
+        if (id != -1L && queryStatus(id)?.first in activeStates && !partFile().exists()) {
+            downloadManager.remove(id)
+            prefs.edit { remove(PREF_DOWNLOAD_ID) }
+            id = -1L
+        }
         if (id == -1L || queryStatus(id)?.first !in activeStates) {
             partFile().delete()
             val request = DownloadManager.Request(Uri.parse(MODEL_URL))
@@ -224,6 +245,22 @@ class ModelLoader(application: Application) : AndroidViewModel(application) {
                     DownloadManager.COLUMN_TOTAL_SIZE_BYTES)),
             )
         }
+
+    /**
+     * Deletes the (presumed damaged) model file plus any in-flight
+     * download and returns to Idle, so the consent card shows and the
+     * user can re-download from scratch. The escape hatch for a model
+     * file the engine refuses to load.
+     */
+    fun deleteModelAndReset() {
+        val id = prefs.getLong(PREF_DOWNLOAD_ID, -1L)
+        if (id != -1L) downloadManager.remove(id)
+        prefs.edit { remove(PREF_DOWNLOAD_ID) }
+        partFile().delete()
+        modelFile().delete()
+        _downloadProgress.value = null
+        _state.value = LoadState.Idle
+    }
 
     override fun onCleared() {
         super.onCleared()

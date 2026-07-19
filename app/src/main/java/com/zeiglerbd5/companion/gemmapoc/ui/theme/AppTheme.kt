@@ -33,35 +33,41 @@ enum class AppTheme(val displayName: String) {
             Sky -> Color(0xFF85B8E2)
         }
 
-    val userBubble: Color
-        get() = when (this) {
-            System -> Color(0xFF0000FF).copy(alpha = 0.18f)
-            Terminal -> Color(0xFF0F1F0F)
-            Tactical -> Color(0xFF3D4A2F)
-            Parchment -> Color(0xFFE8D9B8)
-            WarmCream -> Color(0xFFC8A055).copy(alpha = 0.5f)
-            Sky -> Color(0xFF3D6FAC)
-        }
+    /**
+     * The System theme follows the device's light/dark setting, so its
+     * surfaces take the effective darkness as a parameter (callers pass
+     * `isDark ?: isSystemInDarkTheme()`). Fixed-palette themes ignore it.
+     * The alpha-tint System bubbles of the first pass vanished over a
+     * dark background (Galaxy Fold report) — dark mode gets solid,
+     * iOS-dark-style bubble colors instead.
+     */
+    fun userBubble(dark: Boolean): Color = when (this) {
+        System -> if (dark) Color(0xFF0A84FF).copy(alpha = 0.30f)
+        else Color(0xFF0000FF).copy(alpha = 0.18f)
+        Terminal -> Color(0xFF0F1F0F)
+        Tactical -> Color(0xFF3D4A2F)
+        Parchment -> Color(0xFFE8D9B8)
+        WarmCream -> Color(0xFFC8A055).copy(alpha = 0.5f)
+        Sky -> Color(0xFF3D6FAC)
+    }
 
-    val modelBubble: Color
-        get() = when (this) {
-            System -> Color.Gray.copy(alpha = 0.18f)
-            Terminal -> Color(0xFF161616)
-            Tactical -> Color(0xFF4A4538)
-            Parchment -> Color(0xFFEDE3CC)
-            WarmCream -> Color(0xFFD6D2C8)
-            Sky -> Color(0xFF5E83B7)
-        }
+    fun modelBubble(dark: Boolean): Color = when (this) {
+        System -> if (dark) Color(0xFF2C2C2E) else Color.Gray.copy(alpha = 0.18f)
+        Terminal -> Color(0xFF161616)
+        Tactical -> Color(0xFF4A4538)
+        Parchment -> Color(0xFFEDE3CC)
+        WarmCream -> Color(0xFFD6D2C8)
+        Sky -> Color(0xFF5E83B7)
+    }
 
-    val toolBubble: Color
-        get() = when (this) {
-            System -> Color(0xFF00C853).copy(alpha = 0.12f)
-            Terminal -> Color(0xFF28FE14).copy(alpha = 0.15f)
-            Tactical -> Color(0xFFD4C19C).copy(alpha = 0.22f)
-            Parchment -> Color(0xFFC8B482).copy(alpha = 0.35f)
-            WarmCream -> Color(0xFFB4A078).copy(alpha = 0.3f)
-            Sky -> Color(0xFF5E83B7)
-        }
+    fun toolBubble(dark: Boolean): Color = when (this) {
+        System -> Color(0xFF00C853).copy(alpha = if (dark) 0.20f else 0.12f)
+        Terminal -> Color(0xFF28FE14).copy(alpha = 0.15f)
+        Tactical -> Color(0xFFD4C19C).copy(alpha = 0.22f)
+        Parchment -> Color(0xFFC8B482).copy(alpha = 0.35f)
+        WarmCream -> Color(0xFFB4A078).copy(alpha = 0.3f)
+        Sky -> Color(0xFF5E83B7)
+    }
 
     /**
      * Bubble-text color override. `null` = use the system primary text
@@ -76,15 +82,16 @@ enum class AppTheme(val displayName: String) {
             Sky -> Color.White
         }
 
-    val inputBackground: Color
-        get() = when (this) {
-            System -> Color(0xFFE9E9EA)
-            Terminal -> Color(0xFF0C0E0C)
-            Tactical -> Color(0xFF383C2A)
-            Parchment -> Color(0xFFEEE5CD)
-            WarmCream -> Color(0xFFF4F0E6)
-            Sky -> Color(0xFFFAFDFF)
-        }
+    fun inputBackground(dark: Boolean): Color = when (this) {
+        // System dark was the Galaxy Fold bug: a light-gray field under
+        // dark-mode (white) text. iOS secondarySystemBackground values.
+        System -> if (dark) Color(0xFF1C1C1E) else Color(0xFFE9E9EA)
+        Terminal -> Color(0xFF0C0E0C)
+        Tactical -> Color(0xFF383C2A)
+        Parchment -> Color(0xFFEEE5CD)
+        WarmCream -> Color(0xFFF4F0E6)
+        Sky -> Color(0xFFFAFDFF)
+    }
 
     /**
      * Text color of what the user is typing in the input field.
@@ -99,15 +106,14 @@ enum class AppTheme(val displayName: String) {
             Sky -> Color(0xFF142C50)
         }
 
-    val inputBorder: Color
-        get() = when (this) {
-            System -> Color(0xFFC6C6C8)
-            Terminal -> Color(0xFF28FE14).copy(alpha = 0.55f)
-            Tactical -> Color(0xFFD4C19C).copy(alpha = 0.55f)
-            Parchment -> Color(0xFF3D2E1F).copy(alpha = 0.3f)
-            WarmCream -> Color(0xFF5A3C1E).copy(alpha = 0.25f)
-            Sky -> Color(0xFF5082BE).copy(alpha = 0.45f)
-        }
+    fun inputBorder(dark: Boolean): Color = when (this) {
+        System -> if (dark) Color(0xFF3A3A3C) else Color(0xFFC6C6C8)
+        Terminal -> Color(0xFF28FE14).copy(alpha = 0.55f)
+        Tactical -> Color(0xFFD4C19C).copy(alpha = 0.55f)
+        Parchment -> Color(0xFF3D2E1F).copy(alpha = 0.3f)
+        WarmCream -> Color(0xFF5A3C1E).copy(alpha = 0.25f)
+        Sky -> Color(0xFF5082BE).copy(alpha = 0.45f)
+    }
 
     /** Tint for interactive elements (button, cursor, selection). */
     val accent: Color?

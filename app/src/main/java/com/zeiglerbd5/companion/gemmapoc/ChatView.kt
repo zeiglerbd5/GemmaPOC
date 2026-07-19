@@ -2,14 +2,13 @@ package com.zeiglerbd5.companion.gemmapoc
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -93,10 +92,11 @@ fun ChatView(
                 chatStore.searchEnabled = searchEnabled
                 chatStore.send(engine, text)
             },
-            modifier = Modifier
-                .fillMaxWidth()
-                .imePadding()
-                .navigationBarsPadding(),
+            // Keyboard/nav-bar spacing is owned by the host Scaffold's
+            // contentWindowInsets — adding imePadding() here as well
+            // double-counted the keyboard height and floated the input row
+            // to mid-screen (Galaxy Fold report).
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
@@ -105,10 +105,11 @@ fun ChatView(
 private fun MessageBubble(msg: ChatMessage, appTheme: AppTheme) {
     val isUser = msg.role == ChatRole.User
     val isTool = msg.role == ChatRole.Tool
+    val dark = appTheme.isDark ?: isSystemInDarkTheme()
     val bubbleColor = when (msg.role) {
-        ChatRole.User -> appTheme.userBubble
-        ChatRole.Model -> appTheme.modelBubble
-        ChatRole.Tool -> appTheme.toolBubble
+        ChatRole.User -> appTheme.userBubble(dark)
+        ChatRole.Model -> appTheme.modelBubble(dark)
+        ChatRole.Tool -> appTheme.toolBubble(dark)
     }
     val textColor = appTheme.bubbleText ?: LocalContentColor.current
 
@@ -148,11 +149,12 @@ private fun InputRow(
     modifier: Modifier = Modifier,
 ) {
     var draft by remember { mutableStateOf("") }
+    val dark = appTheme.isDark ?: isSystemInDarkTheme()
 
     Row(
         modifier = modifier
-            .background(appTheme.inputBackground)
-            .border(1.dp, appTheme.inputBorder)
+            .background(appTheme.inputBackground(dark))
+            .border(1.dp, appTheme.inputBorder(dark))
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -173,9 +175,9 @@ private fun InputRow(
                 }
             }),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = appTheme.inputBackground,
-                unfocusedContainerColor = appTheme.inputBackground,
-                disabledContainerColor = appTheme.inputBackground,
+                focusedContainerColor = appTheme.inputBackground(dark),
+                unfocusedContainerColor = appTheme.inputBackground(dark),
+                disabledContainerColor = appTheme.inputBackground(dark),
             ),
         )
         Button(
