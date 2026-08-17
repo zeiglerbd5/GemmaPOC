@@ -75,3 +75,7 @@ This project inherits Companion-ai §2's invariants:
 Before adding any new dependency: confirm it isn't a telemetry /
 analytics SDK. Current transitive surface for LiteRT-LM 0.12.0 is
 `gson`, `kotlin-reflect`, `kotlinx-coroutines-android` — clean.
+
+## License
+
+All rights reserved. Source is published for review; see LICENSE.
